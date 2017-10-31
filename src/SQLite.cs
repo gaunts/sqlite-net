@@ -2158,18 +2158,18 @@ namespace SQLite
 		}
 	}
 
-    [AttributeUsage(AttributeTargets.Property)]
-    public class DefaultValueAttribute : Attribute
-    {
-        public string Value { get; private set; }
+	[AttributeUsage(AttributeTargets.Property)]
+	public class DefaultValueAttribute : Attribute
+	{
+		public string Value { get; private set; }
 
-        public DefaultValueAttribute(string defaultValue)
-        {
-            Value = defaultValue;
-        }
-    }
+		public DefaultValueAttribute(string defaultValue)
+		{
+			Value = defaultValue;
+		}
+	}
 
-    [AttributeUsage (AttributeTargets.Property)]
+	[AttributeUsage (AttributeTargets.Property)]
 	public class NotNullAttribute : Attribute
 	{
 	}
@@ -2311,9 +2311,9 @@ namespace SQLite
 
 			public Type ColumnType { get; private set; }
 
-            public string Collation { get; private set; }
+			public string Collation { get; private set; }
 
-            public string DefaultValue { get; private set; }
+			public string DefaultValue { get; private set; }
 
 			public bool IsAutoInc { get; private set; }
 			public bool IsAutoGuid { get; private set; }
@@ -2339,9 +2339,9 @@ namespace SQLite
 				//If this type is Nullable<T> then Nullable.GetUnderlyingType returns the T, otherwise it returns null, so get the actual type instead
 				ColumnType = Nullable.GetUnderlyingType (prop.PropertyType) ?? prop.PropertyType;
 				Collation = Orm.Collation (prop);
-                DefaultValue = Orm.DefaultValue(prop);
+				DefaultValue = Orm.DefaultValue(prop);
 
-                IsPK = Orm.IsPK (prop) ||
+				IsPK = Orm.IsPK (prop) ||
 					(((createFlags & CreateFlags.ImplicitPK) == CreateFlags.ImplicitPK) &&
 					 	string.Compare (prop.Name, Orm.ImplicitPkName, StringComparison.OrdinalIgnoreCase) == 0);
 
@@ -2462,12 +2462,12 @@ namespace SQLite
 			if (!string.IsNullOrEmpty (p.Collation)) {
 				decl += "collate " + p.Collation + " ";
 			}
-            if (!string.IsNullOrEmpty(p.DefaultValue))
-            {
-                decl += "DEFAULT \'" + p.DefaultValue + "\' ";
-            }
+			if (!string.IsNullOrEmpty (p.DefaultValue))
+			{
+				decl += "DEFAULT \'" + p.DefaultValue + "\' ";
+			}
 
-            return decl;
+			return decl;
 		}
 
 		public static string SqlType (TableMapping.Column p, bool storeDateTimeAsTicks)
@@ -2542,7 +2542,7 @@ namespace SQLite
                  .FirstOrDefault()) ?? "";
         }
 
-        public static bool IsAutoInc (MemberInfo p)
+		public static bool IsAutoInc (MemberInfo p)
 		{
 			return p.CustomAttributes.Any (x => x.AttributeType == typeof (AutoIncrementAttribute));
 		}
