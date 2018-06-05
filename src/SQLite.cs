@@ -164,6 +164,7 @@ namespace SQLite.Net
     [Preserve(AllMembers = true)]
     public partial class SQLiteConnection : IDisposable
     {
+        private bool _silenceExceptions;
         private bool _open;
         private TimeSpan _busyTimeout;
         readonly static Dictionary<string, TableMapping> _mappings = new Dictionary<string, TableMapping>();
@@ -502,6 +503,10 @@ namespace SQLite.Net
         /// </returns>
         public CreateTableResult CreateTable(Type ty, CreateFlags createFlags = CreateFlags.None)
         {
+            //if (ty.Name.Equals("TFR_TARIFS_REMISES"))
+            //{
+
+            //}
             var map = GetMapping(ty, createFlags);
 
             // Present a nice error if no columns specified
@@ -788,8 +793,56 @@ namespace SQLite.Net
             return Query<ColumnInfo>(query);
         }
 
+        void ReCreateTable(TableMapping map, List<ColumnInfo> existingCols)
+        {
+            var tmpName = map.TableName + "_tmp";
+            var rename = "alter table \"" + map.TableName + "\" rename to \"" + tmpName + "\"";
+            Execute(rename);
+            CreateTable(map.MappedType);
+
+            List<string> selectedNamesList = new List<string>();
+            List<string> insertedNamesList = new List<string>();
+            for (int i = 0; i < existingCols.Count(); i++)
+            {
+                string colName = existingCols[i].Name;
+                if (map.Columns.Select(col => col.Name).Contains(colName))
+                {
+                    insertedNamesList.Add(colName);
+                    selectedNamesList.Add(colName);
+                }
+                else if (existingCols.Count == map.Columns.Count())
+                {
+                    insertedNamesList.Add(map.Columns[i].Name);
+                    selectedNamesList.Add(String.Format("{0} AS {1}", existingCols[i].Name, map.Columns[i].Name));
+                }
+            }
+
+            try
+            {
+                var insert = "insert into \"" + map.TableName + "\"" + " (" + string.Join(",", insertedNamesList) + ")" + " select " + String.Join(", ", selectedNamesList) + " from \"" + tmpName + "\"";
+                Execute(insert);
+                var dropTable = "drop table \"" + tmpName + "\"";
+                Execute(dropTable);
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine(e.Message);
+                var dropTable = "drop table \"" + map.TableName + "\"";
+                Execute(dropTable);
+                rename = "alter table \"" + tmpName + "\" rename to \"" + map.TableName + "\"";
+                Execute(rename);
+            }
+        }
+
         void MigrateTable(TableMapping map, List<ColumnInfo> existingCols)
         {
+           if (existingCols.Select(col => col.Name).Except(map.Columns.Select(col => col.Name)).Count() >= 1 ||
+                existingCols.Count != map.Columns.Count())
+            {
+                ReCreateTable(map, existingCols);
+                return;
+            }
+
             var toBeAdded = new List<TableMapping.Column>();
 
             foreach (var p in map.Columns)
@@ -812,31 +865,6 @@ namespace SQLite.Net
                 var addCol = "alter table \"" + map.TableName + "\" add column " + Orm.SqlDecl(p, StoreDateTimeAsTicks);
                 Execute(addCol);
             }
-
-            if (map.TableName.Equals("ArticleMaster"))
-                Debugger.Break();
-
-            var toBeDeleted = existingCols.Select(col => col.Name).Except(map.Columns.Select(col => col.Name)).Count() >= 1;
-            if (!toBeDeleted)
-                return;
-
-            var tmpName = map.TableName + "_tmp";
-            var rename = "alter table \"" + map.TableName + "\" rename to \"" + tmpName + "\"";
-            Execute(rename);
-            CreateTable(map.MappedType);
-
-            StringBuilder selectedNames = new StringBuilder();
-            for (int i = 0; i < map.Columns.Count(); i++)
-            {
-                selectedNames.Append(map.Columns[i].Name);
-                if (i != map.Columns.Count() - 1)
-                    selectedNames.Append(", ");
-            }
-
-            var insert = "insert into \"" + map.TableName + "\" select " + selectedNames + " from \"" + tmpName + "\"";
-            Execute(insert);
-            var dropTable = "drop table \"" + tmpName + "\"";
-            Execute(dropTable);
         }
 
         /// <summary>
@@ -1616,13 +1644,13 @@ namespace SQLite.Net
         /// <returns>
         /// The number of rows added to the table.
         /// </returns>
-        public int Insert(object obj)
+        public int Insert(object obj, bool silenceConstraintExceptions = false)
         {
             if (obj == null)
             {
                 return 0;
             }
-            return Insert(obj, "", Orm.GetType(obj));
+            return Insert(obj, "", Orm.GetType(obj), silenceConstraintExceptions);
         }
 
         /// <summary>
@@ -1729,7 +1757,7 @@ namespace SQLite.Net
         /// <returns>
         /// The number of rows added to the table.
         /// </returns>
-        public int Insert(object obj, string extra, Type objType)
+        public int Insert(object obj, string extra, Type objType, bool silenceConstraintExceptions = false)
         {
             if (obj == null || objType == null)
             {
@@ -1764,7 +1792,7 @@ namespace SQLite.Net
                 // A SQLite prepared statement can be bound for only one operation at a time.
                 try
                 {
-                    count = insertCmd.ExecuteNonQuery(vals);
+                    count = insertCmd.ExecuteNonQuery(vals, silenceConstraintExceptions);
                 }
                 catch (SQLiteException ex)
                 {
@@ -3254,7 +3282,7 @@ namespace SQLite.Net
             CommandText = commandText;
         }
 
-        public int ExecuteNonQuery(object[] source)
+        public int ExecuteNonQuery(object[] source, bool silenceConstraintExceptions = false)
         {
             if (Initialized && Statement == NullStatement)
             {
@@ -3295,6 +3323,12 @@ namespace SQLite.Net
                 string msg = SQLite3.GetErrmsg(Connection.Handle);
                 SQLite3.Reset(Statement);
                 throw SQLiteException.New(r, msg);
+            }
+            else if (r == SQLite3.Result.Constraint && silenceConstraintExceptions)
+            {
+                SQLite3.Reset(Statement);
+                //Debug.WriteLine("Silenced constraint exception :" + CommandText);
+                return 0;
             }
             else if (r == SQLite3.Result.Constraint && SQLite3.ExtendedErrCode(Connection.Handle) == SQLite3.ExtendedResult.ConstraintNotNull)
             {
